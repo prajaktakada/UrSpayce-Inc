@@ -1,53 +1,72 @@
 const userModel = require("../Model/userModel")
+const validator = require('../util/validator')
+const bcrypt = require('bcrypt')
 const jwt = require("jsonwebtoken")
-//let exporter = process.exporter;
 
-
-const isValid = function (value) {
-    if (typeof value === 'undefined' || value === null) return false
-    if (typeof value === 'string' && value.trim().length === 0) return false
-    return true;
-}
-
-const isValidRequestBody = function (requestBody) {
-    return Object.keys(requestBody).length > 0
-}
-
-const resisterUser = async function (req, res) {
+//POST /register
+const createUser = async function (req, res) {
     try {
-        const requestBody = req.body
+        const requestBody = req.body;
+        if (!validator.isValidRequestBody(requestBody)) {
+            return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide college details' })
 
-        if (!isValidRequestBody(requestBody)) {
-            return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide intern details' })
         }
 
         //extract params
-        let { name, email, password } = requestBody;
+        let { name, phone, email, password, role } = requestBody;
 
         //validation starts
-        if (!isValid(name)) {
-            return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide valid name' })
-        }
+        if (!validator.isValid(name)) {
+            return res.status(400).send({ status: false, message: `name is required` })
+        };
 
-        if (!isValid(email)) {
-            return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide valid email' })
-        }
-        if (!(password.trim().length > 7 && password.trim().length < 16)) {
-            return res.status(400).send({ status: false, message: ' Please provide valid password' })
-        }
 
-        if (!isValid(password)) {
-            return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide valid password' })
-        }
+        if (!validator.isValid(phone)) {
+            if (!(/^\(?([1-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})$/.test(phone)))
+                return res.status(400).send({ status: false, message: 'phone no is required' })
 
-        const userData = { name, email, password }
+        };
 
-        let saveduser = await userModel.create(userData)
-        res.status(201).send({ status: true, data: saveduser })
-    }
-    catch (err) {
-        res.status(500).send({ status: false, message: err.message })
-    }
+        const isPhoneAlreadyUsed = await userModel.findOne({ phone: phone }); //{phone: phone} object shorthand property
+        if (isPhoneAlreadyUsed) {
+            return res.status(400).send({ status: false, message: `${phone} phone number is already registered` })
+
+        };
+
+        email = email.trim().toLowerCase()
+        if (!validator.isValid(email)) {
+            if (!(/^\w+([\.-]?\w+)@\w+([\.-]?\w+)(\.\w{2,3})+$/.test(email)))
+                return res.status(400).send({ status: false, message: `Email is required` })
+        };
+
+        const isEmailAlreadyUsed = await userModel.findOne({ email: email });
+        if (isEmailAlreadyUsed) {
+            return res.status(400).send({ status: false, message: `${email} email address is already registered` })
+        };
+
+        if (!validator.isValid(password)) {
+            return res.status(400).send({ status: false, message: `Password is required` })
+        };
+
+        if (!(password.length > 7 && password.length < 16)) {
+            return res.status(400).send({ status: false, message: "password should  between 8 and 15 characters" })
+        };
+
+        if (!validator.isValid(role)) {
+            return res.status(400).send({ status: false, message: `please provide your role between ${['guest', 'admin', 'superadmin']} this` })
+        };
+
+
+
+        const userDetails = { name, phone, email, password, role };
+        const salt = await bcrypt.genSalt(10);
+        userDetails.password = await bcrypt.hash(userDetails.password, salt)
+
+        const newUser = await userModel.create(userDetails);
+        res.status(201).send({ status: true, message: ` success`, data: newUser });
+    } catch (error) {
+        return res.status(500).send({ status: false, message: error.message });
+    };
 }
 
 
@@ -55,19 +74,23 @@ const resisterUser = async function (req, res) {
 // login
 const login = async function (req, res) {
     try {
-        const requestBody = req.body
 
-        if (!isValidRequestBody(requestBody)) {
+        const requestBody = req.body
+        if (!validator.isValidRequestBody(requestBody)) {
             return res.status(400).send({ status: false, message: 'value in request body is required' })
         }
 
         let email = req.body.email
         let password = req.body.password
 
-        if (!isValid(email)) {
+        if (!validator.isValid(email)) {
             return res.status(400).send({ status: false, message: 'Invalid request parameters. Please provide valid email' })
         }
-        if (!isValid(password)) {
+        if (!(/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(email))) {
+            return res.status(400).send({ status: false, message: `Email should be a valid email address` })
+        }
+
+        if (!validator.isValid(password)) {
             return res.status(400).send({ status: false, message: 'password must be present' })
         }
 
@@ -75,29 +98,15 @@ const login = async function (req, res) {
 
             let User = await userModel.findOne({ email: email })
 
-            const Token = jwt.sign({ userId: User._id, exp: Math.floor(Date.now() / 1000) + 30 * 60 }, "pk")
-
-            //
-            // Creating Cookie for Auth
-            res.cookie('jwt', Token, {
-                expires: new Date(Date.now() + process.env.JWT_TOKEN),
-                // secure:true,
-                httpOnly: true,
-            })
-
-
-            logout = (req, res) => {
-                res.clearCookie('jwt')
-                res.clearCookie('user')
-
-            }
-            //
+            const passvalid = await bcrypt.compare(password, User.password)
+            const Token = jwt.sign({userId: User._id,}, "urSpace")
             res.header('x-api-key', Token)
 
             res.status(200).send({ status: true, msg: "User login successfull", data: { userId: User._id, Token: Token } })
         } else {
             res.status(400).send({ status: false, Msg: "Invalid Credentials" })
         }
+
     }
     catch (err) {
         res.status(500).send({ status: false, message: err.message })
@@ -106,5 +115,5 @@ const login = async function (req, res) {
 
 
 
-module.exports = { resisterUser, login }
+module.exports = { createUser, login }
 

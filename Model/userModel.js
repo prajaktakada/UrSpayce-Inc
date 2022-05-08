@@ -1,18 +1,50 @@
 //required mongoose package to define the schema
 const mongoose = require('mongoose')
-//defined schema for user document
-const userSchema = new mongoose.Schema({
+const validator = require('validator');
 
-    name: {type: String,required: true},
-    password: {type: String,required: true},
-    email: {type: String,required: true,unique: true,
-        validate: {
-            validator: function (v) {
-                return /^\w+([\.-]?\w+)@\w+([\.-]?\w+)(\.\w{2,3})+$/.test(v);
-            },
-            message: "Please enter a valid email"
+const userSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      email: {
+        type: String,
+        unique: true,
+        required: true,
+        trim: true,
+        lowercase: true,
+        validate(value) {
+          if (!validator.isEmail(value)) {
+            throw new Error('email is invalid');
+          }
         },
-    }
+      },
+      password: {
+        type: String,
+        trim: true,
+        validate(value) {
+          if (value.toLowerCase().includes('password')) {
+            throw new Error('Password should not contain word: password');
+          }
+        },
+      },
+      phone: {
+        type: String,
+        unique: true,
+        trim: true,
+        validate(value) {
+          if (!validator.isMobilePhone(value)) {
+            throw new Error('Phone is invalid');
+          }
+        },
+      },
+      role: {
+        type: String,
+        default: 'guest',
+        enum: ['guest', 'admin'],
+      },
+  
 
     },{ timestamps: true })
 
